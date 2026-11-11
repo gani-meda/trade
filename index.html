@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simulasi Market Depth</title>
+  <link href="css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body{font-size:13px;padding:12px;background:#f8f9fa}
+    .card{max-width:980px;margin:auto}
+    .depth-table{width:100%;font-family:monospace}
+    .depth-table td,.depth-table th{padding:4px 6px;text-align:center}
+    .tiny{font-size:11px}
+    .muted{color:#666}
+    .level{border-bottom:1px solid rgba(0,0,0,0.06)}
+    .controls input{width:110px;display:inline-block}
+    .btn-xs{padding:0.25rem .4rem;font-size:.75rem}
+    .price-mid {font-weight:700; font-size:14px}
+    .list-log {max-height:240px; overflow:auto}
+  </style>
+</head>
+<body>
+<div class="container" style="max-width:900px;">
+  <div class="row">
+    <!-- Bagian Kiri -->
+    <div class="col-md-6">
+      <!-- Portofolio -->
+      <div class="card shadow-sm mb-2">
+        <div class="card-body p-2">
+          <h6 class="mb-2">Portofolio</h6>
+          <div class="d-flex justify-content-between small">
+            <div><div class="text-muted">Uang</div><div id="cash">100,000,000</div></div>
+            <div><div class="text-muted">Posisi (lot)</div><div id="position">0</div></div>
+            <div><div class="text-muted">Avg Cost</div><div id="avgcost">-</div></div>
+            <div><div class="text-muted">Realized P/L</div><div id="realpl">0</div></div>
+            <div><div class="text-muted">Unrealized P/L</div><div id="unrealpl">0</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Market Depth -->
+      <div class="row">
+        <div class="col-6">
+          <table class="table table-sm depth-table">
+            <thead><tr><th>Lots</th><th>Bid Price</th></tr></thead>
+            <tbody id="bidLevels"></tbody>
+          </table>
+        </div>
+        <div class="col-6">
+          <table class="table table-sm depth-table">
+            <thead><tr><th>Ask Price</th><th>Lots</th></tr></thead>
+            <tbody id="askLevels"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Order Input -->
+      <div class="mt-2 p-2 border rounded bg-light">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <label class="small">Harga</label>
+          <input id="inputPrice" type="number" class="form-control form-control-sm" min="100" max="200" value="150" style="width:90px;">
+          <label class="small">Lot</label>
+          <input id="inputLot" type="number" class="form-control form-control-sm" min="100" step="100" value="100" style="width:90px;">
+          <div class="ms-auto small text-muted">Mid: <span id="midPrice" class="price-mid">-</span></div>
+        </div>
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <button id="btnMMToggle" class="btn btn-sm btn-outline-primary">Toggle MM</button>
+          <button id="btnBuy" class="btn btn-sm btn-outline-success me-1">Buy</button>
+          <button id="btnSell" class="btn btn-sm btn-outline-danger me-1">Sell</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bagian Kanan -->
+    <div class="col-md-6">
+      <!-- Open Orders -->
+      <div class="card shadow-sm mb-2">
+        <div class="card-header p-2 small">Open Orders</div>
+        <div class="card-body p-2">
+          <table class="table table-sm small">
+            <thead><tr><th>#</th><th>Side</th><th>Price</th><th>Lots</th><th></th></tr></thead>
+            <tbody id="openOrders"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Trade Log -->
+      <div class="card shadow-sm">
+        <div class="card-header p-2 small">Trade / Event Log</div>
+        <div class="card-body p-2">
+          <ul id="tradeLog" class="list-unstyled small mb-0 list-log"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/app.min.js"></script>
+</body>
+</html>
