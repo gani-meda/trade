@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simulasi Market Depth</title>
+  <link href="css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body{font-size:13px;padding:12px;background:#f8f9fa}
+    .card{max-width:980px;margin:auto}
+    .depth-table{width:100%;font-family:monospace}
+    .depth-table td,.depth-table th{padding:4px 6px;text-align:center}
+    .tiny{font-size:11px}
+    .muted{color:#666}
+    .level{border-bottom:1px solid rgba(0,0,0,0.06)}
+    .controls input{width:110px;display:inline-block}
+    .btn-xs{padding:0.25rem .4rem;font-size:.75rem}
+    .price-mid {font-weight:700; font-size:14px}
+    .list-log {max-height:240px; overflow:auto}
+  </style>
+</head>
+<body>
+<div class="container" style="max-width:900px;">
+  <div class="row">
+    <!-- Bagian Kiri -->
+    <div class="col-md-6">
+      <!-- Portofolio -->
+      <div class="card shadow-sm mb-2">
+        <div class="card-body p-2">
+          <h6 class="mb-2">Portofolio</h6>
+          <div class="d-flex justify-content-between small">
+            <div><div class="text-muted">Uang</div><div id="cash">100,000,000</div></div>
+            <div><div class="text-muted">Posisi (lot)</div><div id="position">0</div></div>
+            <div><div class="text-muted">Avg Cost</div><div id="avgcost">-</div></div>
+            <div><div class="text-muted">Realized P/L</div><div id="realpl">0</div></div>
+            <div><div class="text-muted">Unrealized P/L</div><div id="unrealpl">0</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Market Depth -->
+      <div class="row">
+        <div class="col-6">
+          <table class="table table-sm depth-table">
+            <thead><tr><th>Lots</th><th>Bid Price</th></tr></thead>
+            <tbody id="bidLevels"></tbody>
+          </table>
+        </div>
+        <div class="col-6">
+          <table class="table table-sm depth-table">
+            <thead><tr><th>Ask Price</th><th>Lots</th></tr></thead>
+            <tbody id="askLevels"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Order Input -->
+      <div class="mt-2 p-2 border rounded bg-light">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <label class="small">Harga</label>
+          <input id="inputPrice" type="number" class="form-control form-control-sm" min="100" max="200" value="150" style="width:90px;">
+          <label class="small">Lot</label>
+          <input id="inputLot" type="number" class="form-control form-control-sm" min="100" step="100" value="100" style="width:90px;">
+          <div class="ms-auto small text-muted">Mid: <span id="midPrice" class="price-mid">-</span></div>
+        </div>
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <button id="btnMMToggle" class="btn btn-sm btn-outline-primary">Toggle MM</button>
+          <button id="btnBuy" class="btn btn-sm btn-outline-success me-1">Buy</button>
+          <button id="btnSell" class="btn btn-sm btn-outline-danger me-1">Sell</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bagian Kanan -->
+    <div class="col-md-6">
+      <!-- Open Orders -->
+      <div class="card shadow-sm mb-2">
+        <div class="card-header p-2 small">Open Orders</div>
+        <div class="card-body p-2">
+          <table class="table table-sm small">
+            <thead><tr><th>#</th><th>Side</th><th>Price</th><th>Lots</th><th></th></tr></thead>
+            <tbody id="openOrders"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Trade Log -->
+      <div class="card shadow-sm">
+        <div class="card-header p-2 small">Trade / Event Log</div>
+        <div class="card-body p-2">
+          <ul id="tradeLog" class="list-unstyled small mb-0 list-log"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+    // Utility
+    const fmt = n => n.toLocaleString('id-ID');
+    const randInt = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+
+    // Market/book state
+    let mid = 150;
+    let mmActive = true;
+    const levels = 5;
+    const tickMs = 700;
+
+    // Book structure:
+    // bidBook: map price -> queue of orders [{id,owner,side,price, lots, ts}]
+    // askBook similar
+    let bidBook = new Map();
+    let askBook = new Map();
+
+    // user open orders list (to show UI). Will also be present in book when resting.
+    let openOrdersArr = [];
+
+    // portfolio
+    let cash = 100_000_000; // 100 juta
+    let position = 0; // in lots
+    let avgCost = 0; // per lot
+    let realizedPL = 0;
+
+    // counters
+    let orderId = 1;
+    const me = 'USER';
+    const mmOwner = 'MM';
+
+    const LOT_SIZE = 100; // 1 lot = 100 saham (ubah jika definisi lain)
+
+
+    // DOM
+    const el = {
+        bidLevels: document.getElementById('bidLevels'),
+        askLevels: document.getElementById('askLevels'),
+        midPrice: document.getElementById('midPrice'),
+        inputPrice: document.getElementById('inputPrice'),
+        inputLot: document.getElementById('inputLot'),
+        btnMMToggle: document.getElementById('btnMMToggle'),
+        btnBuy: document.getElementById('btnBuy'),
+        btnSell: document.getElementById('btnSell'),
+        openOrders: document.getElementById('openOrders'),
+        tradeLog: document.getElementById('tradeLog'),
+        cash: document.getElementById('cash'),
+        position: document.getElementById('position'),
+        avgcost: document.getElementById('avgcost'),
+        realpl: document.getElementById('realpl'),
+        unrealpl: document.getElementById('unrealpl')
+    };
+
+    // initialize
+    function init() {
+        rebuildMMBook();
+        renderAll();
+        setInterval(tick, tickMs);
+        bind();
+    }
+
+    function bind() {
+        el.btnMMToggle.addEventListener('click', () => {
+            mmActive = !mmActive;
+            if (mmActive) logEvent('MM enabled');
+            else logEvent('MM disabled');
+            rebuildMMBook();
+            renderAll();
+        });
+        el.btnBuy.addEventListener('click', () => submitOrder('buy'));
+        el.btnSell.addEventListener('click', () => submitOrder('sell'));
+    }
+
+    // rebuild MM-only orders around current mid (MM orders refreshed each tick)
+    function rebuildMMBook() {
+        // Hapus semua order MM dan juga buang entry dengan lots <= 0 (untuk semua owner)
+        for (let [p, q] of [...bidBook]) {
+            const filtered = q.filter(o => o.owner !== mmOwner && o.lots > 0);
+            if (filtered.length > 0) bidBook.set(p, filtered);
+            else bidBook.delete(p);
+        }
+        for (let [p, q] of [...askBook]) {
+            const filtered = q.filter(o => o.owner !== mmOwner && o.lots > 0);
+            if (filtered.length > 0) askBook.set(p, filtered);
+            else askBook.delete(p);
+        }
+
+        if (!mmActive) return;
+
+        // create symmetrical MM levels (MM orders baru)
+        for (let i = 1; i <= levels; i++) {
+            const bp = clamp(mid - i, 100, 200);
+            const ap = clamp(mid + i, 100, 200);
+            const blots = randInt(100, 1000);  //ganti jumlah lot bid
+            const alots = randInt(100, 1000);  //ganti jumlah lot ask
+            pushOrder({
+                id: nextId(),
+                owner: mmOwner,
+                side: 'buy',
+                price: bp,
+                lots: blots,
+                ts: Date.now()
+            }, bidBook);
+            pushOrder({
+                id: nextId(),
+                owner: mmOwner,
+                side: 'sell',
+                price: ap,
+                lots: alots,
+                ts: Date.now()
+            }, askBook);
+        }
+    }
+
+
+    function clamp(v, a, b) {
+        return Math.max(a, Math.min(b, v));
+    }
+
+    function nextId() {
+        return orderId++;
+    }
+
+    // Push order into given book (map). Queue at that price appended (FIFO).
+    function pushOrder(order, book) {
+        // cegah order kosong masuk book
+        if (!order || !order.lots || order.lots <= 0) return null;
+
+        const p = order.price;
+        const q = book.get(p) || [];
+        q.push(order);
+        book.set(p, q);
+        return order;
+    }
+
+    // Submit user order (limit)
+    function submitOrder(side) {
+        const price = parseInt(el.inputPrice.value, 10);
+        let lots = parseInt(el.inputLot.value, 10);
+        if (isNaN(price) || isNaN(lots) || lots <= 0) {
+            alert('Harga / Lot tidak valid');
+            return;
+        }
+        // enforce lot multiples of 100 and within reasonable bounds
+        if (lots % 100 !== 0) lots = Math.round(lots / 100) * 100;
+        if (lots < 100) lots = 100;
+
+        // --- START PATCH: prevent selling when no/insufficient position ---
+        if (side === 'sell') {
+            if (position <= 0) {
+                alert('Anda tidak memiliki posisi. Tidak dapat melakukan SELL.');
+                return; // stop submit
+            }
+            if (lots > position) {
+                alert('Jumlah lot jual melebihi posisi saat ini (' + position + ' lot). Kurangi jumlah lot.');
+                return; // stop submit (alternatif: set lots = position; tapi safer to require user adjust)
+            }
+        }
+        // --- END PATCH ---
+
+        const order = {
+            id: nextId(),
+            owner: me,
+            side: side,
+            price: price,
+            lots: lots,
+            ts: Date.now()
+        };
+        logEvent(`New order #${order.id} ${side.toUpperCase()} ${order.lots}@${order.price}`);
+        // Try match immediately
+        const remaining = matchOrder(order);
+        if (remaining > 0) {
+            // rest in book
+            const resting = {
+                id: order.id,
+                owner: me,
+                side: side,
+                price: price,
+                lots: remaining,
+                ts: Date.now()
+            };
+            if (side === 'buy') pushOrder(resting, bidBook);
+            else pushOrder(resting, askBook);
+            openOrdersArr.push(resting);
+        }
+        renderAll();
+    }
+
+    // Matching logic: FIFO against opposite book.
+    // Returns remaining lots after matching.
+    function matchOrder(order) {
+        let remaining = order.lots;
+        if (order.side === 'buy') {
+            const askPrices = [...askBook.keys()].sort((a, b) => a - b);
+            for (let p of askPrices) {
+                if (p > order.price) break;
+                let q = askBook.get(p) || [];
+                while (q.length && remaining > 0) {
+                    const head = q[0];
+                    const take = Math.min(head.lots, remaining);
+                    executeTrade({
+                        taker: order.owner,
+                        maker: head.owner,
+                        side: 'buy',
+                        price: p,
+                        lots: take,
+                        takerId: order.id,
+                        makerId: head.id
+                    });
+                    remaining -= take;
+                    head.lots -= take;
+                    if (head.lots === 0) q.shift();
+                    if (remaining === 0) break;
+                }
+                q = q.filter(o => o.lots > 0); // <— bersihkan zero-lot
+                if (q.length > 0) askBook.set(p, q);
+                else askBook.delete(p);
+                if (remaining === 0) break;
+            }
+        } else {
+            const bidPrices = [...bidBook.keys()].sort((a, b) => b - a);
+            for (let p of bidPrices) {
+                if (p < order.price) break;
+                let q = bidBook.get(p) || [];
+                while (q.length && remaining > 0) {
+                    const head = q[0];
+                    const take = Math.min(head.lots, remaining);
+                    executeTrade({
+                        taker: order.owner,
+                        maker: head.owner,
+                        side: 'sell',
+                        price: p,
+                        lots: take,
+                        takerId: order.id,
+                        makerId: head.id
+                    });
+                    remaining -= take;
+                    head.lots -= take;
+                    if (head.lots === 0) q.shift();
+                    if (remaining === 0) break;
+                }
+                q = q.filter(o => o.lots > 0); // <— bersihkan zero-lot
+                if (q.length > 0) bidBook.set(p, q);
+                else bidBook.delete(p);
+                if (remaining === 0) break;
+            }
+        }
+
+        // pastikan tidak ada entry zero-lot tersisa (safety net)
+        purgeZeroOrders(bidBook);
+        purgeZeroOrders(askBook);
+
+
+        cleanupOpenOrders();
+        return remaining;
+    }
+
+    // Execute trade and update portfolio
+    function executeTrade({
+        taker,
+        maker,
+        side,
+        price,
+        lots,
+        takerId,
+        makerId
+    }) {
+        // side here is from taker perspective: 'buy' means taker buys from maker at price
+        logEvent(`Trade ${lots}@${price} (taker:${taker}, maker:${maker})`);
+
+        // money/share units always use LOT_SIZE to convert lot -> shares
+        const shares = lots * LOT_SIZE;
+        // profit per share = (price - avgCost)
+        // profit for lots = (price - avgCost) * shares
+
+        if (taker === me) {
+            // user is taker
+            if (side === 'buy') {
+                // pay cash, increase position (position stored in lots), update avgCost
+                const cost = price * shares;          // price * lots * LOT_SIZE
+                cash -= cost;
+
+                // avgCost stored as price per share
+                const prevPos = position;            // in lots
+                const prevCostTotal = avgCost * (prevPos * LOT_SIZE); // cost in money
+                const newPos = prevPos + lots;       // lots
+                const newCostTotal = prevCostTotal + cost;            // money
+                avgCost = newPos === 0 ? 0 : (newCostTotal / (newPos * LOT_SIZE)); // per share
+                position = newPos;
+            } else {
+                // side sell: taker sells to maker at price => realize P/L
+                const revenue = price * shares;
+                cash += revenue;
+                // realized P/L in money
+                const pl = (price - avgCost) * shares;
+                realizedPL += pl;
+                // reduce position (lots)
+                position -= lots;
+                if (position <= 0) {
+                    position = 0;
+                    avgCost = 0;
+                }
+            }
+        } else if (maker === me) {
+            // user was maker (their resting order got hit)
+            if (side === 'buy') {
+                // taker buys from maker => maker sold => user sold
+                const revenue = price * shares;
+                cash += revenue;
+                const pl = (price - avgCost) * shares;
+                realizedPL += pl;
+                position -= lots;
+                if (position <= 0) {
+                    position = 0;
+                    avgCost = 0;
+                }
+            } else {
+                // side === 'sell' meaning taker sold to maker => maker bought => user bought
+                const cost = price * shares;
+                cash -= cost;
+                const prevPos = position;
+                const prevCostTotal = avgCost * (prevPos * LOT_SIZE);
+                const newPos = prevPos + lots;
+                const newCostTotal = prevCostTotal + cost;
+                avgCost = newPos === 0 ? 0 : (newCostTotal / (newPos * LOT_SIZE));
+                position = newPos;
+            }
+        } else {
+            // trade between other parties (MM vs MM) - no portfolio impact
+        }
+
+        // update display values
+        updateUnrealized();
+        renderPortfolio();
+    }
+
+
+    function updateUnrealized() {
+        const up = position * 100 * (mid - avgCost);
+        el.unrealpl.textContent = fmt(Math.round(up));
+    }
+
+    function renderPortfolio() {
+        el.cash.textContent = fmt(Math.round(cash));
+        el.position.textContent = fmt(position);
+        el.avgcost.textContent = position === 0 ? '-' : fmt(Math.round(avgCost));
+        el.realpl.textContent = fmt(Math.round(realizedPL));
+        updateUnrealized();
+    }
+
+    function cleanupOpenOrders() {
+        // remove any openOrdersArr entries with 0 lots or not present in book
+        openOrdersArr = openOrdersArr.filter(o => {
+            if (o.lots <= 0) return false;
+            // check presence in book
+            const book = o.side === 'buy' ? bidBook : askBook;
+            const q = book.get(o.price) || [];
+            const found = q.some(x => x.id === o.id && x.owner === me);
+            return found;
+        });
+    }
+
+    // Cancel order by id (user)
+    function cancelOpenOrder(id) {
+        // remove from appropriate book
+        openOrdersArr = openOrdersArr.filter(o => {
+            if (o.id !== id) return true;
+            // remove from book
+            const book = o.side === 'buy' ? bidBook : askBook;
+            const q = book.get(o.price) || [];
+            const remaining = q.filter(x => !(x.id === id && x.owner === me));
+            if (remaining.length === 0) book.delete(o.price);
+            else book.set(o.price, remaining);
+            logEvent(`Order #${id} canceled`);
+            return false; // remove from openOrdersArr
+        });
+        renderAll();
+    }
+
+    // Tick: move mid slightly and refresh MM book lots/prices
+    function tick() {
+        const move = randInt(-1, 1); // -1,0,1 for small drift (you can increase for more extreme)
+        mid = clamp(mid + move, 100, 200);
+        // occasionally make bigger moves to simulate extreme MM behavior
+        if (Math.random() < 0.06) {
+            mid = clamp(mid + randInt(-3, 3), 100, 200);
+        }
+        // regenMM book while preserving USER orders
+        rebuildMMBook();
+        purgeZeroOrders(bidBook);
+        purgeZeroOrders(askBook);
+        el.midPrice.textContent = mid;
+        // auto-match if crossing due to mid move (i.e., new mm asks might now cross user bids)
+        // Try match resting user orders against new opposing book
+        // Create shallow copy to iterate
+        const userOpenCopy = [...openOrdersArr];
+        for (let o of userOpenCopy) {
+            // attempt to match a tiny piece by calling matchOrder with an order representing remaining
+            // But we must ensure to attempt only if crossing: buy order price >= best ask OR sell order price <= best bid
+            if (o.side === 'buy') {
+                const bestAsk = bestPrice(askBook, 'asc');
+                if (bestAsk !== null && bestAsk <= o.price) {
+                    // attempt match
+                    const temp = {
+                        id: o.id,
+                        owner: me,
+                        side: 'buy',
+                        price: o.price,
+                        lots: o.lots
+                    };
+                    const rem = matchOrder(temp);
+                    if (rem !== o.lots) {
+                        // update openOrdersArr entry
+                        o.lots = rem;
+                        if (o.lots <= 0) {
+                            // remove later by cleanup
+                        }
+                    }
+                }
+            } else {
+                const bestBid = bestPrice(bidBook, 'desc');
+                if (bestBid !== null && bestBid >= o.price) {
+                    const temp = {
+                        id: o.id,
+                        owner: me,
+                        side: 'sell',
+                        price: o.price,
+                        lots: o.lots
+                    };
+                    const rem = matchOrder(temp);
+                    if (rem !== o.lots) o.lots = rem;
+                }
+            }
+        }
+        cleanupOpenOrders();
+        renderAll();
+    }
+
+    function bestPrice(book, dir = 'asc') {
+        const keys = [...book.keys()];
+        if (keys.length === 0) return null;
+        if (dir === 'asc') return Math.min(...keys);
+        return Math.max(...keys);
+    }
+
+    // Rendering functions
+    function renderAll() {
+        renderBook();
+        renderOpenOrders();
+        renderPortfolio();
+        renderLogScroll();
+    }
+
+    function renderBook() {
+        // Build display arrays: bid side descending, ask ascending
+        const bidPrices = [...bidBook.keys()].sort((a, b) => b - a);
+        const askPrices = [...askBook.keys()].sort((a, b) => a - b);
+
+        // Sum lots per level for display
+        el.bidLevels.innerHTML = '';
+        for (let p of bidPrices) {
+            const q = bidBook.get(p);
+            const totalLots = q.reduce((s, o) => s + Math.max(0, o.lots), 0);
+            if (totalLots <= 0) {
+                // kalau ketemu level 0, skip (dan pastikan book key dihapus)
+                // (opsional) book.delete(p) -- tapi kita lebih aman membiarkan purge yang menangani
+                continue;
+            }
+            const row = `<tr class="level"><td>${fmt(totalLots)}</td><td>${p}</td></tr>`;
+            el.bidLevels.insertAdjacentHTML('beforeend', row);
+        }
+        // ensure fixed number of rows for visual symmetry
+        while (el.bidLevels.children.length < levels) {
+            el.bidLevels.insertAdjacentHTML('beforeend', `<tr class="level"><td>0</td><td>-</td></tr>`);
+        }
+
+        el.askLevels.innerHTML = '';
+        for (let p of askPrices) {
+            const q = askBook.get(p);
+            const totalLots = q.reduce((s, o) => s + Math.max(0, o.lots), 0);
+            if (totalLots <= 0) {
+                // kalau ketemu level 0, skip (dan pastikan book key dihapus)
+                // (opsional) book.delete(p) -- tapi kita lebih aman membiarkan purge yang menangani
+                continue;
+            }
+            const row = `<tr class="level"><td>${p}</td><td>${fmt(totalLots)}</td></tr>`;
+            el.askLevels.insertAdjacentHTML('beforeend', row);
+        }
+        while (el.askLevels.children.length < levels) {
+            el.askLevels.insertAdjacentHTML('beforeend', `<tr class="level"><td>-</td><td>0</td></tr>`);
+        }
+    }
+
+    function renderOpenOrders() {
+        el.openOrders.innerHTML = '';
+        // show in chronological order (older first)
+        openOrdersArr.sort((a, b) => a.ts - b.ts);
+        openOrdersArr.forEach((o, idx) => {
+            const btn = `<button class="btn btn-xs btn-outline-danger" onclick="cancelById(${o.id})">Cancel</button>`;
+            const row = `<tr><td>${o.id}</td><td>${o.side.toUpperCase()}</td><td>${o.price}</td><td>${fmt(o.lots)}</td><td>${btn}</td></tr>`;
+            el.openOrders.insertAdjacentHTML('beforeend', row);
+        });
+    }
+
+    // global function for cancel buttons
+    window.cancelById = (id) => {
+        cancelOpenOrder(id);
+    };
+
+    function logEvent(txt) {
+        const li = document.createElement('li');
+        const ts = new Date().toLocaleTimeString();
+        li.textContent = `[${ts}] ${txt}`;
+        el.tradeLog.prepend(li);
+        // keep log size reasonable
+        while (el.tradeLog.children.length > 500) el.tradeLog.removeChild(el.tradeLog.lastChild);
+    }
+
+    function renderLogScroll() {
+        // no-op; we prepend so newest on top
+    }
+
+    // Start with some initial MM book
+    function seedInitial() {
+        // small initial spread around mid
+        for (let i = 1; i <= levels; i++) {
+            const bp = clamp(mid - i, 100, 200);
+            const ap = clamp(mid + i, 100, 200);
+            pushOrder({
+                id: nextId(),
+                owner: mmOwner,
+                side: 'buy',
+                price: bp,
+                lots: randInt(100, 1000),
+                ts: Date.now()
+            }, bidBook);
+            pushOrder({
+                id: nextId(),
+                owner: mmOwner,
+                side: 'sell',
+                price: ap,
+                lots: randInt(100, 1000),
+                ts: Date.now()
+            }, askBook);
+        }
+    }
+
+    function purgeZeroOrders(book) {
+        for (let [p, q] of [...book]) {
+            // filter hanya orders dengan lots > 0
+            const filtered = q.filter(o => o.lots > 0);
+            if (filtered.length > 0) book.set(p, filtered);
+            else book.delete(p);
+        }
+    }
+
+    // initial seed
+    seedInitial();
+    renderAll();
+
+    // start init after small delay to bind events
+    init();
+
+    // Expose render helpers for debugging (optional)
+    window._state = () => ({
+        mid,
+        cash,
+        position,
+        avgCost,
+        realizedPL,
+        bidBook: mapToObj(bidBook),
+        askBook: mapToObj(askBook),
+        openOrdersArr
+    });
+
+    function mapToObj(m) {
+        const out = {};
+        for (let [k, v] of m) out[k] = v.map(x => ({
+            id: x.id,
+            owner: x.owner,
+            lots: x.lots
+        }));
+        return out;
+    }
+
+})();
+</script>
+</body>
+</html>
