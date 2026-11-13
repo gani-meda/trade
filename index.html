@@ -1,100 +1,931 @@
 <!doctype html>
-<html lang="id">
+<html lang="id" data-bs-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Simulasi Trading</title>
-  <link href="css/bootstrap.min.css" rel="stylesheet">
+  <!-- Menggunakan Bootstrap 5.3 CDN & Google Fonts agar langsung siap pakai -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
   <style>
-    body{font-size:13px;padding:12px;background:#f8f9fa}
-    .card{max-width:980px;margin:auto}
-    .depth-table{width:100%;font-family:monospace}
-    .depth-table td,.depth-table th{padding:4px 6px;text-align:center}
-    .tiny{font-size:11px}
-    .muted{color:#666}
-    .level{border-bottom:1px solid rgba(0,0,0,0.06)}
-    .controls input{width:110px;display:inline-block}
-    .btn-xs{padding:0.25rem .4rem;font-size:.75rem}
-    .price-mid {font-weight:700; font-size:14px}
-    .list-log {max-height:240px; overflow:auto}
+    :root {
+      --bg-main: #0b0e14;
+      --bg-card: #131722;
+      --bg-card-header: #181d2a;
+      --border-color: #252b3b;
+      --text-primary: #e2e8f0;
+      --text-muted: #848e9c;
+      --bid-color: #0ecb81;
+      --bid-bg: rgba(14, 203, 129, 0.14);
+      --ask-color: #f6465d;
+      --ask-bg: rgba(246, 70, 93, 0.14);
+      --accent-blue: #3b82f6;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      background-color: var(--bg-main);
+      color: var(--text-primary);
+      padding: 16px;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .trading-container {
+      max-width: 1120px;
+      margin: auto;
+    }
+
+    .card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+      overflow: hidden;
+    }
+
+    .card-header {
+      background-color: var(--bg-card-header);
+      border-bottom: 1px solid var(--border-color);
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #a0aec0;
+      padding: 10px 14px;
+    }
+
+    /* Portfolio Stats Grid */
+    .stat-box {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 8px 12px;
+    }
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+    .stat-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    /* Orderbook / Market Depth */
+    .depth-table {
+      width: 100%;
+      margin-bottom: 0;
+      border-collapse: collapse;
+    }
+    .depth-table th {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border-color);
+      background: rgba(0, 0, 0, 0.15);
+    }
+    .depth-table td {
+      padding: 6px 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Efek Hover & Klik pada Bid/Ask Price */
+    .price-cell {
+      cursor: pointer;
+      font-weight: 700;
+      transition: all 0.15s ease;
+      border-radius: 4px;
+    }
+    .bid-price {
+      color: var(--bid-color);
+    }
+    .bid-price:hover {
+      background-color: rgba(14, 203, 129, 0.25);
+      transform: scale(1.04);
+    }
+    .ask-price {
+      color: var(--ask-color);
+    }
+    .ask-price:hover {
+      background-color: rgba(246, 70, 93, 0.25);
+      transform: scale(1.04);
+    }
+
+    /* Visual Depth Bar Background */
+    .depth-row-bid {
+      background-repeat: no-repeat;
+      background-position: right center;
+      background-image: linear-gradient(to left, var(--bid-bg), var(--bid-bg));
+      transition: background-size 0.25s ease;
+    }
+    .depth-row-ask {
+      background-repeat: no-repeat;
+      background-position: left center;
+      background-image: linear-gradient(to right, var(--ask-bg), var(--ask-bg));
+      transition: background-size 0.25s ease;
+    }
+
+    /* Animasi flash saat harga diklik */
+    @keyframes priceFlash {
+      0% { box-shadow: 0 0 0 2px #3b82f6; background-color: rgba(59, 130, 246, 0.25); }
+      100% { box-shadow: none; }
+    }
+    .input-flash {
+      animation: priceFlash 0.45s ease-out;
+    }
+
+    /* Controls & Inputs */
+    .form-control-dark {
+      background-color: #0b0e14;
+      border: 1px solid var(--border-color);
+      color: #fff;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+    }
+    .form-control-dark:focus {
+      background-color: #0b0e14;
+      border-color: var(--accent-blue);
+      color: #fff;
+      box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.2);
+    }
+
+    .btn-buy {
+      background-color: var(--bid-color);
+      color: #062116;
+      font-weight: 700;
+      border: none;
+    }
+    .btn-buy:hover {
+      background-color: #0bb874;
+      color: #062116;
+    }
+    .btn-sell {
+      background-color: var(--ask-color);
+      color: #fff;
+      font-weight: 700;
+      border: none;
+    }
+    .btn-sell:hover {
+      background-color: #e03a50;
+      color: #fff;
+    }
+
+    .mid-badge {
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      color: #60a5fa;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    /* Open Orders & Logs */
+    .table-dark-custom th {
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .table-dark-custom td {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      vertical-align: middle;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .list-log {
+      max-height: 280px;
+      overflow-y: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11.5px;
+    }
+    .list-log li {
+      padding: 4px 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      color: #cbd5e1;
+    }
+    .list-log li:first-child {
+      background: rgba(59, 130, 246, 0.08);
+      color: #fff;
+    }
+    .list-log li.log-error {
+      background: rgba(246, 70, 93, 0.14);
+      color: #ff7b8b;
+      border-left: 3px solid var(--ask-color);
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-main); }
+    ::-webkit-scrollbar-thumb { background: #2d3548; border-radius: 3px; }
   </style>
 </head>
 <body>
-<div class="container" style="max-width:900px;">
-  <div class="row">
-    <!-- Bagian Kiri -->
-    <div class="col-md-6">
-      <!-- Portofolio -->
-      <div class="card shadow-sm mb-2">
-        <div class="card-body p-2">
-          <h6 class="mb-2">Portofolio</h6>
-          <div class="d-flex justify-content-between small">
-            <div><div class="text-muted">Uang</div><div id="cash">100,000,000</div></div>
-            <div><div class="text-muted">Posisi (lot)</div><div id="position">0</div></div>
-            <div><div class="text-muted">Avg Cost</div><div id="avgcost">-</div></div>
-            <div><div class="text-muted">Realized P/L</div><div id="realpl">0</div></div>
-            <div><div class="text-muted">Unrealized P/L</div><div id="unrealpl">0</div></div>
+
+<div class="trading-container">
+  <!-- Header Bar -->
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 pb-2 border-bottom border-secondary border-opacity-25">
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge bg-primary px-2 py-1">SIM-IDX</span>
+      <h5 class="mb-0 fw-bold tracking-tight">Simulasi Orderbook & Trading</h5>
+    </div>
+    <div class="d-flex align-items-center gap-3">
+      <div class="small text-muted">Mid Price: <span id="midPrice" class="mid-badge ms-1">150</span></div>
+      <button id="btnMMToggle" class="btn btn-sm btn-outline-info fw-semibold">
+        <span id="mmIndicator" class="d-inline-block rounded-circle bg-success me-1" style="width:8px;height:8px;"></span>
+        MM: ON
+      </button>
+    </div>
+  </div>
+
+  <!-- Portofolio Summary Bar -->
+  <div class="card mb-3">
+    <div class="card-body p-2">
+      <div class="row g-2">
+        <div class="col-6 col-md">
+          <div class="stat-box">
+            <div class="stat-label">Cash (IDR)</div>
+            <div id="cash" class="stat-value text-light">100,000,000</div>
+          </div>
+        </div>
+        <div class="col-6 col-md">
+          <div class="stat-box">
+            <div class="stat-label">Posisi (Lot)</div>
+            <div id="position" class="stat-value text-info">0</div>
+          </div>
+        </div>
+        <div class="col-4 col-md">
+          <div class="stat-box">
+            <div class="stat-label">Avg Cost</div>
+            <div id="avgcost" class="stat-value text-light">-</div>
+          </div>
+        </div>
+        <div class="col-4 col-md">
+          <div class="stat-box">
+            <div class="stat-label">Realized P/L</div>
+            <div id="realpl" class="stat-value">0</div>
+          </div>
+        </div>
+        <div class="col-4 col-md">
+          <div class="stat-box">
+            <div class="stat-label">Unrealized P/L</div>
+            <div id="unrealpl" class="stat-value">0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <!-- Kolom Kiri: Orderbook & Order Entry -->
+    <div class="col-lg-6">
+      <!-- Market Depth -->
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>Order Book (Market Depth)</span>
+          <span class="text-lowercase fw-normal" style="font-size: 11px; color: #848e9c;">Klik harga untuk memilih</span>
+        </div>
+        <div class="card-body p-0">
+          <div class="row g-0">
+            <div class="col-6 border-end border-secondary border-opacity-25">
+              <table class="depth-table">
+                <thead>
+                  <tr>
+                    <th class="text-start ps-3">Bid Lots</th>
+                    <th class="text-end pe-3">Bid</th>
+                  </tr>
+                </thead>
+                <tbody id="bidLevels"></tbody>
+              </table>
+            </div>
+            <div class="col-6">
+              <table class="depth-table">
+                <thead>
+                  <tr>
+                    <th class="text-start ps-3">Ask</th>
+                    <th class="text-end pe-3">Ask Lots</th>
+                  </tr>
+                </thead>
+                <tbody id="askLevels"></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Market Depth -->
-      <div class="row">
-        <div class="col-6">
-          <table class="table table-sm depth-table">
-            <thead><tr><th>Lots</th><th>Bid Price</th></tr></thead>
-            <tbody id="bidLevels"></tbody>
-          </table>
-        </div>
-        <div class="col-6">
-          <table class="table table-sm depth-table">
-            <thead><tr><th>Ask Price</th><th>Lots</th></tr></thead>
-            <tbody id="askLevels"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Order Input -->
-      <div class="mt-2 p-2 border rounded bg-light">
-        <div class="d-flex align-items-center gap-2 mb-2">
-          <label class="small">Harga</label>
-          <input id="inputPrice" type="number" class="form-control form-control-sm" min="100" max="200" value="150" style="width:90px;">
-          <label class="small">Lot</label>
-          <input id="inputLot" type="number" class="form-control form-control-sm" min="100" step="100" value="100" style="width:90px;">
-          <div class="ms-auto small text-muted">Mid: <span id="midPrice" class="price-mid">-</span></div>
-        </div>
-        <div class="d-flex align-items-center gap-2 mb-2">
-          <button id="btnMMToggle" class="btn btn-sm btn-outline-primary">Toggle MM</button>
-          <button id="btnBuy" class="btn btn-sm btn-outline-success me-1">Buy</button>
-          <button id="btnSell" class="btn btn-sm btn-outline-danger me-1">Sell</button>
+      <!-- Order Input Panel -->
+      <div class="card">
+        <div class="card-header">Place Limit Order</div>
+        <div class="card-body p-3">
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small text-muted mb-1">Harga (100 - 200)</label>
+              <input id="inputPrice" type="number" class="form-control form-control-dark" min="100" max="200" value="150">
+            </div>
+            <div class="col-6">
+              <label class="form-label small text-muted mb-1">Jumlah Lot (Kelipatan 100)</label>
+              <input id="inputLot" type="number" class="form-control form-control-dark" min="100" step="100" value="100">
+            </div>
+          </div>
+          <div class="row g-2">
+            <div class="col-6">
+              <button id="btnBuy" class="btn btn-buy w-100 py-2">BUY / BELI</button>
+            </div>
+            <div class="col-6">
+              <button id="btnSell" class="btn btn-sell w-100 py-2">SELL / JUAL</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Bagian Kanan -->
-    <div class="col-md-6">
+    <!-- Kolom Kanan: Open Orders & Trade Log -->
+    <div class="col-lg-6">
       <!-- Open Orders -->
-      <div class="card shadow-sm mb-2">
-        <div class="card-header p-2 small">Open Orders</div>
-        <div class="card-body p-2">
-          <table class="table table-sm small">
-            <thead><tr><th>#</th><th>Side</th><th>Price</th><th>Lots</th><th></th></tr></thead>
-            <tbody id="openOrders"></tbody>
-          </table>
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>Open Orders</span>
+          <span id="openOrderCount" class="badge bg-secondary">0</span>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive" style="max-height: 185px;">
+            <table class="table table-dark-custom table-hover mb-0">
+              <thead>
+                <tr>
+                  <th class="ps-3">#ID</th>
+                  <th>Side</th>
+                  <th>Price</th>
+                  <th>Lots</th>
+                  <th class="text-end pe-3">Action</th>
+                </tr>
+              </thead>
+              <tbody id="openOrders">
+                <tr><td colspan="5" class="text-center text-muted py-3">Tidak ada order aktif</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
       <!-- Trade Log -->
-      <div class="card shadow-sm">
-        <div class="card-header p-2 small">Trade / Event Log</div>
-        <div class="card-body p-2">
-          <ul id="tradeLog" class="list-unstyled small mb-0 list-log"></ul>
+      <div class="card">
+        <div class="card-header">Trade & Event Log</div>
+        <div class="card-body p-0">
+          <ul id="tradeLog" class="list-unstyled mb-0 list-log"></ul>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<script src="js/app.min.js"></script>
+<script>
+(() => {
+    // Utility
+    const fmt = n => n.toLocaleString('id-ID');
+    const randInt = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+
+    // Market/book state
+    let mid = 150;
+    let mmActive = true;
+    const levels = 5;
+    const tickMs = 700;
+
+    let bidBook = new Map();
+    let askBook = new Map();
+    let openOrdersArr = [];
+
+    // portfolio
+    let cash = 100_000_000;
+    let position = 0;
+    let avgCost = 0;
+    let realizedPL = 0;
+
+    // counters
+    let orderId = 1;
+    const me = 'USER';
+    const mmOwner = 'MM';
+    const LOT_SIZE = 100;
+
+    // DOM
+    const el = {
+        bidLevels: document.getElementById('bidLevels'),
+        askLevels: document.getElementById('askLevels'),
+        midPrice: document.getElementById('midPrice'),
+        inputPrice: document.getElementById('inputPrice'),
+        inputLot: document.getElementById('inputLot'),
+        btnMMToggle: document.getElementById('btnMMToggle'),
+        mmIndicator: document.getElementById('mmIndicator'),
+        btnBuy: document.getElementById('btnBuy'),
+        btnSell: document.getElementById('btnSell'),
+        openOrders: document.getElementById('openOrders'),
+        openOrderCount: document.getElementById('openOrderCount'),
+        tradeLog: document.getElementById('tradeLog'),
+        cash: document.getElementById('cash'),
+        position: document.getElementById('position'),
+        avgcost: document.getElementById('avgcost'),
+        realpl: document.getElementById('realpl'),
+        unrealpl: document.getElementById('unrealpl')
+    };
+
+    // Fungsi Helper untuk mengisi harga saat Bid/Ask diklik
+    function setPriceFromBook(price) {
+        if (!price || isNaN(price)) return;
+        el.inputPrice.value = price;
+        el.inputPrice.classList.remove('input-flash');
+        void el.inputPrice.offsetWidth; // trigger reflow agar animasi ulang
+        el.inputPrice.classList.add('input-flash');
+    }
+
+    function init() {
+        rebuildMMBook();
+        renderAll();
+        setInterval(tick, tickMs);
+        bind();
+    }
+
+    function bind() {
+        el.btnMMToggle.addEventListener('click', () => {
+            mmActive = !mmActive;
+            if (mmActive) {
+                logEvent('MM enabled');
+                el.btnMMToggle.innerHTML = `<span class="d-inline-block rounded-circle bg-success me-1" style="width:8px;height:8px;"></span> MM: ON`;
+                el.btnMMToggle.classList.replace('btn-outline-secondary', 'btn-outline-info');
+            } else {
+                logEvent('MM disabled');
+                el.btnMMToggle.innerHTML = `<span class="d-inline-block rounded-circle bg-danger me-1" style="width:8px;height:8px;"></span> MM: OFF`;
+                el.btnMMToggle.classList.replace('btn-outline-info', 'btn-outline-secondary');
+            }
+            rebuildMMBook();
+            renderAll();
+        });
+
+        el.btnBuy.addEventListener('click', () => submitOrder('buy'));
+        el.btnSell.addEventListener('click', () => submitOrder('sell'));
+
+        // Event delegation untuk klik pada Bid Price & Ask Price
+        el.bidLevels.addEventListener('click', (e) => {
+            const cell = e.target.closest('[data-price]');
+            if (cell) setPriceFromBook(cell.dataset.price);
+        });
+
+        el.askLevels.addEventListener('click', (e) => {
+            const cell = e.target.closest('[data-price]');
+            if (cell) setPriceFromBook(cell.dataset.price);
+        });
+    }
+
+    function rebuildMMBook() {
+        for (let [p, q] of [...bidBook]) {
+            const filtered = q.filter(o => o.owner !== mmOwner && o.lots > 0);
+            if (filtered.length > 0) bidBook.set(p, filtered);
+            else bidBook.delete(p);
+        }
+        for (let [p, q] of [...askBook]) {
+            const filtered = q.filter(o => o.owner !== mmOwner && o.lots > 0);
+            if (filtered.length > 0) askBook.set(p, filtered);
+            else askBook.delete(p);
+        }
+
+        if (!mmActive) return;
+
+        for (let i = 1; i <= levels; i++) {
+            const bp = clamp(mid - i, 100, 200);
+            const ap = clamp(mid + i, 100, 200);
+            const blots = randInt(100, 1000);
+            const alots = randInt(100, 1000);
+            pushOrder({
+                id: nextId(),
+                owner: mmOwner,
+                side: 'buy',
+                price: bp,
+                lots: blots,
+                ts: Date.now()
+            }, bidBook);
+            pushOrder({
+                id: nextId(),
+                owner: mmOwner,
+                side: 'sell',
+                price: ap,
+                lots: alots,
+                ts: Date.now()
+            }, askBook);
+        }
+    }
+
+    function clamp(v, a, b) {
+        return Math.max(a, Math.min(b, v));
+    }
+
+    function nextId() {
+        return orderId++;
+    }
+
+    function pushOrder(order, book) {
+        if (!order || !order.lots || order.lots <= 0) return null;
+        const p = order.price;
+        const q = book.get(p) || [];
+        q.push(order);
+        book.set(p, q);
+        return order;
+    }
+
+    function submitOrder(side) {
+        const price = parseInt(el.inputPrice.value, 10);
+        let lots = parseInt(el.inputLot.value, 10);
+        if (isNaN(price) || isNaN(lots) || lots <= 0) {
+            logEvent('ERROR: Harga atau jumlah lot tidak valid.', true);
+            return;
+        }
+        if (lots % 100 !== 0) lots = Math.round(lots / 100) * 100;
+        if (lots < 100) lots = 100;
+
+        // --- VALIDASI PENGECEKAN CASH & POSISI (LOG KE TRADE LOG) ---
+        const totalShares = lots * LOT_SIZE;
+        const totalCostNeeded = price * totalShares;
+
+        if (side === 'buy') {
+            if (totalCostNeeded > cash) {
+                logEvent(`ERROR BUY: Cash tidak cukup! Butuh Rp ${fmt(totalCostNeeded)} (${fmt(lots)} lot @${price}), Cash tersedia Rp ${fmt(cash)}.`, true);
+                return;
+            }
+        }
+
+        if (side === 'sell') {
+            if (position <= 0) {
+                logEvent('ERROR SELL: Anda tidak memiliki posisi untuk dijual.', true);
+                return;
+            }
+            if (lots > position) {
+                logEvent(`ERROR SELL: Lot jual (${fmt(lots)}) melebihi posisi saat ini (${fmt(position)} lot).`, true);
+                return;
+            }
+        }
+        // -----------------------------------------------------------
+
+        const order = {
+            id: nextId(),
+            owner: me,
+            side: side,
+            price: price,
+            lots: lots,
+            ts: Date.now()
+        };
+        logEvent(`New order #${order.id} ${side.toUpperCase()} ${order.lots}@${order.price}`);
+        const remaining = matchOrder(order);
+        if (remaining > 0) {
+            const resting = {
+                id: order.id,
+                owner: me,
+                side: side,
+                price: price,
+                lots: remaining,
+                ts: Date.now()
+            };
+            if (side === 'buy') pushOrder(resting, bidBook);
+            else pushOrder(resting, askBook);
+            openOrdersArr.push(resting);
+        }
+        renderAll();
+    }
+
+    function matchOrder(order) {
+        let remaining = order.lots;
+        if (order.side === 'buy') {
+            const askPrices = [...askBook.keys()].sort((a, b) => a - b);
+            for (let p of askPrices) {
+                if (p > order.price) break;
+                let q = askBook.get(p) || [];
+                while (q.length && remaining > 0) {
+                    const head = q[0];
+                    const take = Math.min(head.lots, remaining);
+                    executeTrade({
+                        taker: order.owner,
+                        maker: head.owner,
+                        side: 'buy',
+                        price: p,
+                        lots: take,
+                        takerId: order.id,
+                        makerId: head.id
+                    });
+                    remaining -= take;
+                    head.lots -= take;
+                    if (head.lots === 0) q.shift();
+                    if (remaining === 0) break;
+                }
+                q = q.filter(o => o.lots > 0);
+                if (q.length > 0) askBook.set(p, q);
+                else askBook.delete(p);
+                if (remaining === 0) break;
+            }
+        } else {
+            const bidPrices = [...bidBook.keys()].sort((a, b) => b - a);
+            for (let p of bidPrices) {
+                if (p < order.price) break;
+                let q = bidBook.get(p) || [];
+                while (q.length && remaining > 0) {
+                    const head = q[0];
+                    const take = Math.min(head.lots, remaining);
+                    executeTrade({
+                        taker: order.owner,
+                        maker: head.owner,
+                        side: 'sell',
+                        price: p,
+                        lots: take,
+                        takerId: order.id,
+                        makerId: head.id
+                    });
+                    remaining -= take;
+                    head.lots -= take;
+                    if (head.lots === 0) q.shift();
+                    if (remaining === 0) break;
+                }
+                q = q.filter(o => o.lots > 0);
+                if (q.length > 0) bidBook.set(p, q);
+                else bidBook.delete(p);
+                if (remaining === 0) break;
+            }
+        }
+
+        purgeZeroOrders(bidBook);
+        purgeZeroOrders(askBook);
+        cleanupOpenOrders();
+        return remaining;
+    }
+
+    function executeTrade({ taker, maker, side, price, lots }) {
+        logEvent(`Trade ${lots}@${price} (taker:${taker}, maker:${maker})`);
+        const shares = lots * LOT_SIZE;
+
+        if (taker === me) {
+            if (side === 'buy') {
+                const cost = price * shares;
+                cash -= cost;
+                const prevPos = position;
+                const prevCostTotal = avgCost * (prevPos * LOT_SIZE);
+                const newPos = prevPos + lots;
+                const newCostTotal = prevCostTotal + cost;
+                avgCost = newPos === 0 ? 0 : (newCostTotal / (newPos * LOT_SIZE));
+                position = newPos;
+            } else {
+                const revenue = price * shares;
+                cash += revenue;
+                const pl = (price - avgCost) * shares;
+                realizedPL += pl;
+                position -= lots;
+                if (position <= 0) {
+                    position = 0;
+                    avgCost = 0;
+                }
+            }
+        } else if (maker === me) {
+            if (side === 'buy') {
+                const revenue = price * shares;
+                cash += revenue;
+                const pl = (price - avgCost) * shares;
+                realizedPL += pl;
+                position -= lots;
+                if (position <= 0) {
+                    position = 0;
+                    avgCost = 0;
+                }
+            } else {
+                const cost = price * shares;
+                cash -= cost;
+                const prevPos = position;
+                const prevCostTotal = avgCost * (prevPos * LOT_SIZE);
+                const newPos = prevPos + lots;
+                const newCostTotal = prevCostTotal + cost;
+                avgCost = newPos === 0 ? 0 : (newCostTotal / (newPos * LOT_SIZE));
+                position = newPos;
+            }
+        }
+
+        updateUnrealized();
+        renderPortfolio();
+    }
+
+    function colorizePL(element, val) {
+        element.classList.remove('text-success', 'text-danger', 'text-light');
+        if (val > 0) element.classList.add('text-success');
+        else if (val < 0) element.classList.add('text-danger');
+        else element.classList.add('text-light');
+    }
+
+    function updateUnrealized() {
+        const up = Math.round(position * 100 * (mid - avgCost));
+        el.unrealpl.textContent = (up > 0 ? '+' : '') + fmt(up);
+        colorizePL(el.unrealpl, up);
+    }
+
+    function renderPortfolio() {
+        el.cash.textContent = fmt(Math.round(cash));
+        el.position.textContent = fmt(position);
+        el.avgcost.textContent = position === 0 ? '-' : fmt(Math.round(avgCost));
+        
+        const rpl = Math.round(realizedPL);
+        el.realpl.textContent = (rpl > 0 ? '+' : '') + fmt(rpl);
+        colorizePL(el.realpl, rpl);
+        
+        updateUnrealized();
+    }
+
+    function cleanupOpenOrders() {
+        openOrdersArr = openOrdersArr.filter(o => {
+            if (o.lots <= 0) return false;
+            const book = o.side === 'buy' ? bidBook : askBook;
+            const q = book.get(o.price) || [];
+            return q.some(x => x.id === o.id && x.owner === me);
+        });
+    }
+
+    function cancelOpenOrder(id) {
+        openOrdersArr = openOrdersArr.filter(o => {
+            if (o.id !== id) return true;
+            const book = o.side === 'buy' ? bidBook : askBook;
+            const q = book.get(o.price) || [];
+            const remaining = q.filter(x => !(x.id === id && x.owner === me));
+            if (remaining.length === 0) book.delete(o.price);
+            else book.set(o.price, remaining);
+            logEvent(`Order #${id} canceled`);
+            return false;
+        });
+        renderAll();
+    }
+
+    function tick() {
+        const move = randInt(-1, 1);
+        mid = clamp(mid + move, 100, 200);
+        if (Math.random() < 0.06) {
+            mid = clamp(mid + randInt(-3, 3), 100, 200);
+        }
+        rebuildMMBook();
+        purgeZeroOrders(bidBook);
+        purgeZeroOrders(askBook);
+        el.midPrice.textContent = mid;
+
+        const userOpenCopy = [...openOrdersArr];
+        for (let o of userOpenCopy) {
+            if (o.side === 'buy') {
+                const bestAsk = bestPrice(askBook, 'asc');
+                if (bestAsk !== null && bestAsk <= o.price) {
+                    const temp = { id: o.id, owner: me, side: 'buy', price: o.price, lots: o.lots };
+                    const rem = matchOrder(temp);
+                    if (rem !== o.lots) o.lots = rem;
+                }
+            } else {
+                const bestBid = bestPrice(bidBook, 'desc');
+                if (bestBid !== null && bestBid >= o.price) {
+                    const temp = { id: o.id, owner: me, side: 'sell', price: o.price, lots: o.lots };
+                    const rem = matchOrder(temp);
+                    if (rem !== o.lots) o.lots = rem;
+                }
+            }
+        }
+        cleanupOpenOrders();
+        renderAll();
+    }
+
+    function bestPrice(book, dir = 'asc') {
+        const keys = [...book.keys()];
+        if (keys.length === 0) return null;
+        return dir === 'asc' ? Math.min(...keys) : Math.max(...keys);
+    }
+
+    function renderAll() {
+        renderBook();
+        renderOpenOrders();
+        renderPortfolio();
+    }
+
+    function renderBook() {
+        const bidPrices = [...bidBook.keys()].sort((a, b) => b - a);
+        const askPrices = [...askBook.keys()].sort((a, b) => a - b);
+
+        let maxLots = 1000;
+        for (let p of bidPrices) {
+            const sum = bidBook.get(p).reduce((s, o) => s + Math.max(0, o.lots), 0);
+            if (sum > maxLots) maxLots = sum;
+        }
+        for (let p of askPrices) {
+            const sum = askBook.get(p).reduce((s, o) => s + Math.max(0, o.lots), 0);
+            if (sum > maxLots) maxLots = sum;
+        }
+
+        el.bidLevels.innerHTML = '';
+        for (let p of bidPrices) {
+            const q = bidBook.get(p);
+            const totalLots = q.reduce((s, o) => s + Math.max(0, o.lots), 0);
+            if (totalLots <= 0) continue;
+            const pct = Math.min(100, Math.round((totalLots / maxLots) * 100));
+            const row = `
+              <tr class="depth-row-bid" style="background-size: ${pct}% 100%;">
+                <td class="text-start ps-3 text-light">${fmt(totalLots)}</td>
+                <td class="text-end pe-3 price-cell bid-price" data-price="${p}" title="Klik untuk set harga ${p}">${p}</td>
+              </tr>`;
+            el.bidLevels.insertAdjacentHTML('beforeend', row);
+        }
+        while (el.bidLevels.children.length < levels) {
+            el.bidLevels.insertAdjacentHTML('beforeend', `<tr><td class="text-start ps-3 text-muted">0</td><td class="text-end pe-3 text-muted">-</td></tr>`);
+        }
+
+        el.askLevels.innerHTML = '';
+        for (let p of askPrices) {
+            const q = askBook.get(p);
+            const totalLots = q.reduce((s, o) => s + Math.max(0, o.lots), 0);
+            if (totalLots <= 0) continue;
+            const pct = Math.min(100, Math.round((totalLots / maxLots) * 100));
+            const row = `
+              <tr class="depth-row-ask" style="background-size: ${pct}% 100%;">
+                <td class="text-start ps-3 price-cell ask-price" data-price="${p}" title="Klik untuk set harga ${p}">${p}</td>
+                <td class="text-end pe-3 text-light">${fmt(totalLots)}</td>
+              </tr>`;
+            el.askLevels.insertAdjacentHTML('beforeend', row);
+        }
+        while (el.askLevels.children.length < levels) {
+            el.askLevels.insertAdjacentHTML('beforeend', `<tr><td class="text-start ps-3 text-muted">-</td><td class="text-end pe-3 text-muted">0</td></tr>`);
+        }
+    }
+
+    function renderOpenOrders() {
+        el.openOrderCount.textContent = openOrdersArr.length;
+        if (openOrdersArr.length === 0) {
+            el.openOrders.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-3">Tidak ada order aktif</td></tr>`;
+            return;
+        }
+        el.openOrders.innerHTML = '';
+        openOrdersArr.sort((a, b) => a.ts - b.ts);
+        openOrdersArr.forEach((o) => {
+            const badgeClass = o.side === 'buy' ? 'bg-success bg-opacity-25 text-success' : 'bg-danger bg-opacity-25 text-danger';
+            const btn = `<button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:11px;" onclick="cancelById(${o.id})">Cancel</button>`;
+            const row = `
+              <tr>
+                <td class="ps-3 text-muted">#${o.id}</td>
+                <td><span class="badge ${badgeClass}">${o.side.toUpperCase()}</span></td>
+                <td class="fw-bold">${o.price}</td>
+                <td>${fmt(o.lots)}</td>
+                <td class="text-end pe-3">${btn}</td>
+              </tr>`;
+            el.openOrders.insertAdjacentHTML('beforeend', row);
+        });
+    }
+
+    window.cancelById = (id) => cancelOpenOrder(id);
+
+    function logEvent(txt, isError = false) {
+        const li = document.createElement('li');
+        if (isError) li.classList.add('log-error');
+        const ts = new Date().toLocaleTimeString('id-ID', { hour12: false });
+        li.innerHTML = `<span class="text-muted me-2">[${ts}]</span>${txt}`;
+        el.tradeLog.prepend(li);
+        while (el.tradeLog.children.length > 500) el.tradeLog.removeChild(el.tradeLog.lastChild);
+    }
+
+    function seedInitial() {
+        for (let i = 1; i <= levels; i++) {
+            const bp = clamp(mid - i, 100, 200);
+            const ap = clamp(mid + i, 100, 200);
+            pushOrder({ id: nextId(), owner: mmOwner, side: 'buy', price: bp, lots: randInt(100, 1000), ts: Date.now() }, bidBook);
+            pushOrder({ id: nextId(), owner: mmOwner, side: 'sell', price: ap, lots: randInt(100, 1000), ts: Date.now() }, askBook);
+        }
+    }
+
+    function purgeZeroOrders(book) {
+        for (let [p, q] of [...book]) {
+            const filtered = q.filter(o => o.lots > 0);
+            if (filtered.length > 0) book.set(p, filtered);
+            else book.delete(p);
+        }
+    }
+
+    seedInitial();
+    renderAll();
+    init();
+
+    window._state = () => ({
+        mid, cash, position, avgCost, realizedPL,
+        bidBook: mapToObj(bidBook),
+        askBook: mapToObj(askBook),
+        openOrdersArr
+    });
+
+    function mapToObj(m) {
+        const out = {};
+        for (let [k, v] of m) out[k] = v.map(x => ({ id: x.id, owner: x.owner, lots: x.lots }));
+        return out;
+    }
+})();
+</script>
 </body>
 </html>
